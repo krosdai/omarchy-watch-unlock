@@ -240,13 +240,37 @@ class DesktopPhaseTests(unittest.TestCase):
             setup.configure({"action": "repair"})
 
 
-class PatchTests(unittest.TestCase):
-    def test_patches_exist_and_target_the_pinned_tree(self):
-        for patch in setup.PATCHES:
-            with self.subTest(patch=patch):
-                text = (setup.PLUGIN / patch).read_text()
-                self.assertTrue(text.startswith("From "))
-                self.assertIn("diff --git", text)
+class BundledModuleTests(unittest.TestCase):
+    def test_bundled_source_is_locked_licensed_and_fixed(self):
+        source = setup.MODULE_SOURCE
+        for name in ("Cargo.toml", "Cargo.lock", "LICENSE"):
+            with self.subTest(name=name):
+                self.assertTrue((source / name).is_file())
+        # Guard against re-vendoring upstream without the discovery fixes.
+        self.assertIn("discover_devices_with_changes", (source / "src/watch.rs").read_text())
+        self.assertIn("search_timeout_ms", (source / "src/pam/lib.rs").read_text())
+
+    def test_build_uses_locked_crates_and_a_private_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            release = workspace / "target/release"
+            release.mkdir(parents=True)
+            (release / "libpam_apple_watch.so").write_bytes(b"so")
+            with (
+                mock.patch.object(setup, "find_cargo", return_value="/usr/bin/cargo"),
+                mock.patch.object(setup, "run") as run,
+            ):
+                module, cli = setup.build(workspace)
+        self.assertEqual(module, b"so")
+        self.assertEqual(cli, release / "watch_unlock_cli")
+        builds = [
+            call for call in run.call_args_list if call.args[:2] == ("/usr/bin/cargo", "build")
+        ]
+        self.assertEqual(len(builds), 2)
+        for call in builds:
+            self.assertIn("--locked", call.args)
+            self.assertEqual(call.kwargs["cwd"], setup.MODULE_SOURCE)
+            self.assertEqual(call.kwargs["env"]["CARGO_TARGET_DIR"], str(workspace / "target"))
 
 
 if __name__ == "__main__":

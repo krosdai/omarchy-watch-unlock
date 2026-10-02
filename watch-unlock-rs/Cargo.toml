@@ -1,0 +1,39 @@
+[package]
+name = "watch-unlock-rs"
+version = "0.2.0"
+edition = "2024"
+authors = ["Katelyn 'KatLongLegs' Haworth <katelyn+github@haworth.id.au>"]
+license = "MIT"
+
+[dependencies]
+aes = "0.8.4"
+base64 = "0.22.1"
+bluer = { version = "0.17.4", features = ["bluetoothd"] }
+clap = "4.5.58"
+ecb = { version = "0.1.2", features = ["block-padding", "std"] }
+futures = "0.3.31"
+pam = { version = "0.8.0", features = ["default", "module"] }
+thiserror = "2.0.18"
+tokio = "1.49.0"
+libc = "0.2.182"
+async-trait = "0.1.89"
+
+[lints.clippy]
+pedantic = "deny"
+
+[features]
+cli = []
+
+[[bin]]
+name = "watch_unlock_cli"
+path = "src/cli/main.rs"
+required-features = ["cli"]
+
+[lib]
+name = "pam_apple_watch"
+path = "src/pam/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true

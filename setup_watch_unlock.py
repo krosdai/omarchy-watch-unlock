@@ -16,14 +16,9 @@ import tempfile
 from pathlib import Path
 
 VERSION = "0.1.0"
-UPSTREAM = "https://github.com/KatelynHaworth/watch-unlock-rs.git"
-# Pin the reviewed upstream tree; the patches below are written against it.
-UPSTREAM_COMMIT = "360aafcaca6394359646a14fb2e771a56d5b6ef0"
 PLUGIN = Path(__file__).resolve().parent
-PATCHES = (
-    "patches/0001-fix-watch-wait-for-fresh-adverts-of-cached-watches.patch",
-    "patches/0002-feat-pam-scan-once-with-a-configurable-timeout.patch",
-)
+# Bundled watch-unlock-rs, with this plugin's discovery fixes applied.
+MODULE_SOURCE = PLUGIN / "watch-unlock-rs"
 SOURCES = ("setup_watch_unlock.py",)
 
 PAM_FILE = "etc/pam.d/omarchy-lock-password"
@@ -328,24 +323,16 @@ def find_cargo():
 
 
 def build(workspace):
-    """Build the pinned, patched module; return (module bytes, CLI path)."""
-    run("omarchy-pkg-add", "git", "clang", "pkgconf")
+    """Build the bundled module; return (module bytes, CLI path)."""
+    run("omarchy-pkg-add", "clang", "pkgconf")
     cargo = find_cargo()
     if cargo is None:
         run("omarchy-pkg-add", "rust")
         cargo = find_cargo() or "cargo"
-    source = workspace / "watch-unlock-rs"
-    run("git", "clone", "--quiet", UPSTREAM, str(source))
-    run("git", "-C", str(source), "checkout", "--quiet", "--detach", UPSTREAM_COMMIT)
-    head = run("git", "-C", str(source), "rev-parse", "HEAD", capture_output=True, text=True)
-    if head.stdout.strip() != UPSTREAM_COMMIT:
-        raise RuntimeError("Upstream checkout does not match the pinned commit.")
-    patches = [str(PLUGIN / patch) for patch in PATCHES]
-    run("git", "-C", str(source), "apply", "--check", *patches)
-    run("git", "-C", str(source), "apply", *patches)
+    # Keep build output out of the plugin checkout.
     environment = {**os.environ, "CARGO_TARGET_DIR": str(workspace / "target")}
     for target in (("--lib",), ("--bin", "watch_unlock_cli", "--features", "cli")):
-        run(cargo, "build", "--locked", "--release", *target, cwd=source, env=environment)
+        run(cargo, "build", "--locked", "--release", *target, cwd=MODULE_SOURCE, env=environment)
     release = workspace / "target/release"
     return (release / "libpam_apple_watch.so").read_bytes(), release / "watch_unlock_cli"
 
@@ -397,8 +384,8 @@ def install(state):
     if not confirm(
         "Unlock the Omarchy lock screen with your Apple Watch?\n"
         "Wake the lock, type any key and press Enter while wearing your unlocked watch.\n"
-        "Builds the watch-unlock-rs PAM module from GitHub at a pinned commit, with\n"
-        "this plugin's patches; may install git, clang, pkgconf and rust with pacman.\n"
+        "Builds the bundled watch-unlock-rs PAM module (Rust crates come from\n"
+        "crates.io); may install clang, pkgconf and rust with pacman.\n"
         "Needs a Mac with Apple Watch Auto Unlock to copy the watch's IRK.\n"
         f"Writes /{MODULE_FILE} and /{CONF_FILE} (world-readable),\n"
         f"and adds one line to /{PAM_FILE}. Previous files are saved\n"
