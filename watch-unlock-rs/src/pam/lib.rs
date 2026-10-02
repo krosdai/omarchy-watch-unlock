@@ -84,6 +84,7 @@ impl PamModule for AppleWatchPAM {
 
 impl AppleWatchPAM {
     const DEFAULT_UNLOCK_THRESHOLD: i16 = -80;
+    const DEFAULT_SEARCH_TIMEOUT_MS: u64 = 1500;
 
     async fn unlock_with_apple_watch(
         args: HashMap<&str, &str>,
@@ -103,11 +104,19 @@ impl AppleWatchPAM {
             .and_then(|value| value.parse().ok())
             .unwrap_or(Self::DEFAULT_UNLOCK_THRESHOLD);
 
+        // A single continuous discovery session finds the watch far more
+        // reliably than several short ones, as each restart of discovery
+        // eats into the time available to receive an advertisement.
+        let search_timeout_ms: u64 = args
+            .get("search_timeout_ms")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(Self::DEFAULT_SEARCH_TIMEOUT_MS);
+
         conv.info(c"Searching for Apple Watch");
         let mut watch = AppleWatch::new(irk);
 
         match watch
-            .find_watch(&adapter, 3, Duration::from_millis(500))
+            .find_watch(&adapter, 1, Duration::from_millis(search_timeout_ms))
             .await
         {
             Err(err) => {

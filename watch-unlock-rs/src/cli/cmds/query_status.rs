@@ -24,10 +24,18 @@ impl CommandDelegate for QueryStatusCommand {
                     .required(true)
                     .help("Identity Resolution Key, in base64, of the Apple Watch to query"),
             )
+            .arg(
+                Arg::new("timeout-ms")
+                    .long("timeout-ms")
+                    .value_parser(clap::value_parser!(u64))
+                    .default_value("1500")
+                    .help("Milliseconds to keep scanning for the Apple Watch"),
+            )
     }
 
     async fn execute(&self, args: &ArgMatches) -> i32 {
         let encoded_irl: &String = args.get_one("irk").expect("required argument");
+        let timeout_ms: u64 = *args.get_one("timeout-ms").expect("has default");
 
         println!("Decoding Identity Resolution Key for Apple Watch");
         let mut raw_irk: [u8; 16] = [0; 16];
@@ -65,7 +73,7 @@ impl CommandDelegate for QueryStatusCommand {
 
         println!("Searching for Apple Watch");
         match watch
-            .find_watch(&adapter, 3, Duration::from_millis(500))
+            .find_watch(&adapter, 1, Duration::from_millis(timeout_ms))
             .await
         {
             Err(err) => {
