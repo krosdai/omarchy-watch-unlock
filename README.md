@@ -4,8 +4,9 @@ A headless Omarchy service plugin (`krosdai.watch-unlock`) that lets a nearby, u
 Apple Watch unlock the Omarchy lock screen. Wake the lock, type any key and press Enter
 while wearing the watch. Your password keeps working as before.
 
-It builds and configures [`watch-unlock-rs`](https://github.com/KatelynHaworth/watch-unlock-rs),
-a PAM module by Katelyn Haworth, with two fixes from this repository's `patches/`. Tested
+It bundles and configures [`watch-unlock-rs`](https://github.com/KatelynHaworth/watch-unlock-rs),
+a PAM module by Katelyn Haworth, with two discovery fixes (see
+[Bundled module](#bundled-module)). Tested
 on a Dell XPS 14 DA14260 with Omarchy 4.0.4, BlueZ 5.87 and an Apple Watch with
 Auto Unlock enabled for a Mac.
 
@@ -34,8 +35,8 @@ manual lock.
 - An Apple Watch paired to an iPhone, and **a Mac on the same Apple Account with
   "Unlock with Apple Watch" turned on**. The Mac is needed once, to copy the watch's
   IRK from iCloud Keychain; Apple offers no other way to get it.
-- Internet access during setup: it clones upstream from GitHub and fetches Rust crates.
-  Setup installs `git`, `clang`, `pkgconf` and, if `cargo` is missing, `rust` with
+- Internet access during setup, to fetch the module's locked Rust crates from crates.io.
+  Setup installs `clang`, `pkgconf` and, if `cargo` is missing, `rust` with
   `omarchy-pkg-add`.
 
 ## Install
@@ -50,7 +51,7 @@ omarchy plugin add file://$HOME/repos/krosdai.omarchy-watch-unlock --enable
 On first enable, the plugin opens a terminal with a disclosure and a `[y/N]` prompt.
 After you agree, setup:
 
-1. builds the PAM module from upstream commit `360aafc` plus `patches/`;
+1. builds the bundled PAM module in a temporary directory;
 2. asks for the watch's IRK (hidden input) and checks that the watch is found, near
    enough, unlocked and has Auto Unlock enabled. Nothing is installed if this fails;
 3. asks for your sudo password and runs the privileged step from a frozen copy of
@@ -153,20 +154,28 @@ versions.
 If the lock screen ever crashes, switch to a text console (`Ctrl+Alt+F3`): console login
 does not use this module.
 
-## Patches
+## Bundled module
 
-Upstream at `360aafc` found the watch only about one time in three when unlocking
-repeatedly:
+`watch-unlock-rs/` is upstream
+[`KatelynHaworth/watch-unlock-rs`](https://github.com/KatelynHaworth/watch-unlock-rs)
+at commit `360aafc`: tag `v0.2.0` plus version, packaging and README changes, with the
+same Rust sources. Only `Cargo.toml`, `Cargo.lock` and `src/` are included, under
+upstream's MIT license (`watch-unlock-rs/LICENSE`). The repository history
+imports it unchanged, then applies two fixes as separate commits, so
+`git log -p -- watch-unlock-rs` shows every local change.
 
-- `0001`: BlueZ keeps a recently seen watch cached without an RSSI, and every retry
-  matched that stale entry instantly. The fix listens for property changes too and waits
-  for a fresh advertisement.
-- `0002`: three 500 ms scans, each restarting discovery, often missed a resting watch.
-  The fix runs one continuous scan bounded by a new `search_timeout_ms` argument and a
-  `query_status --timeout-ms` flag. Twelve consecutive runs then all found the watch,
-  most in under 1.7 seconds.
+Upstream found the watch only about one time in three when unlocking repeatedly:
 
-The patches are offered under upstream's MIT license.
+- **Stale cache:** BlueZ keeps a recently seen watch cached without an RSSI, and every
+  retry matched that stale entry instantly. The fix listens for property changes too
+  and waits for a fresh advertisement.
+- **Fragmented scanning:** three 500 ms scans, each restarting discovery, often missed a
+  resting watch. The fix runs one continuous scan bounded by a new `search_timeout_ms`
+  argument and a `query_status --timeout-ms` flag. Twelve consecutive runs then all
+  found the watch, most in under 1.7 seconds.
+
+The fixes are offered under upstream's MIT license. To update the module, import a new
+upstream commit unchanged, then re-apply or drop the fixes as reviewable commits.
 
 ## Development
 
@@ -175,8 +184,11 @@ uv sync --locked
 uv run --locked python -m unittest discover -s tests -v
 uv run --locked ruff check .
 uv run --locked ruff format --check .
+(cd watch-unlock-rs && CARGO_TARGET_DIR=/tmp/watch-unlock-target cargo clippy --locked --lib)
 omarchy plugin validate <clean export>
 ```
+
+Keep Cargo output outside the plugin folder with `CARGO_TARGET_DIR`, as setup does.
 
 The unit tests use temporary directories and mock every package, sudo, Bluetooth and
 PAM command. Never run setup as a test unless you intend to configure the host. Validate
