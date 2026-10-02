@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "krosdai.watch-unlock",
+  "name": "Apple Watch Unlock",
+  "version": "0.1.0",
+  "author": "Krosdai",
+  "description": "Unlock the Omarchy lock screen with a nearby, unlocked Apple Watch.",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" }
+}
