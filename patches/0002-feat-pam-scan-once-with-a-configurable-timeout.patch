@@ -1,0 +1,99 @@
+From ad11a916cd49fbe1ba9be48948ecc67fe6b8a107 Mon Sep 17 00:00:00 2001
+From: Kros Dai <xdanger@gmail.com>
+Date: Fri, 2 Oct 2026 19:24:21 -0400
+Subject: [PATCH 2/2] =?UTF-8?q?=E2=9C=A8=20feat(pam):=20scan=20once=20with?=
+ =?UTF-8?q?=20a=20configurable=20timeout?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- :sparkles: restarting discovery every 500 ms often missed a resting watch;
+  one continuous scan found it 12/12 times, so search with a single session
+  bounded by the new `search_timeout_ms` argument and `--timeout-ms` flag
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01V3Lw32tHoiRurY3giCoNR7
+---
+ conf/pam.d/apple-watch       |  2 ++
+ src/cli/cmds/query_status.rs | 10 +++++++++-
+ src/pam/lib.rs               | 11 ++++++++++-
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/conf/pam.d/apple-watch b/conf/pam.d/apple-watch
+index 95f20e8..8d48920 100644
+--- a/conf/pam.d/apple-watch
++++ b/conf/pam.d/apple-watch
+@@ -3,6 +3,8 @@
+ # Available module arguments:
+ #   * unlock_threshold (16-bit signed integer) - Controls the maximum distance, as received signal strength indicator, a
+ #                                                watch maybe whilst still allowing for unlocking this device (default -80).
++#   * search_timeout_ms (64-bit unsigned integer) - How long, in milliseconds, to keep scanning for the watch before
++#                                                giving up (default 1500).
+ auth    sufficient  pam_apple_watch.so
+ 
+ # Optionally permit account management if no other modules
+diff --git a/src/cli/cmds/query_status.rs b/src/cli/cmds/query_status.rs
+index 56ab3d4..c0021b7 100644
+--- a/src/cli/cmds/query_status.rs
++++ b/src/cli/cmds/query_status.rs
+@@ -24,10 +24,18 @@ impl CommandDelegate for QueryStatusCommand {
+                     .required(true)
+                     .help("Identity Resolution Key, in base64, of the Apple Watch to query"),
+             )
++            .arg(
++                Arg::new("timeout-ms")
++                    .long("timeout-ms")
++                    .value_parser(clap::value_parser!(u64))
++                    .default_value("1500")
++                    .help("Milliseconds to keep scanning for the Apple Watch"),
++            )
+     }
+ 
+     async fn execute(&self, args: &ArgMatches) -> i32 {
+         let encoded_irl: &String = args.get_one("irk").expect("required argument");
++        let timeout_ms: u64 = *args.get_one("timeout-ms").expect("has default");
+ 
+         println!("Decoding Identity Resolution Key for Apple Watch");
+         let mut raw_irk: [u8; 16] = [0; 16];
+@@ -65,7 +73,7 @@ impl CommandDelegate for QueryStatusCommand {
+ 
+         println!("Searching for Apple Watch");
+         match watch
+-            .find_watch(&adapter, 3, Duration::from_millis(500))
++            .find_watch(&adapter, 1, Duration::from_millis(timeout_ms))
+             .await
+         {
+             Err(err) => {
+diff --git a/src/pam/lib.rs b/src/pam/lib.rs
+index b4342c2..28ff6af 100644
+--- a/src/pam/lib.rs
++++ b/src/pam/lib.rs
+@@ -84,6 +84,7 @@ impl PamModule for AppleWatchPAM {
+ 
+ impl AppleWatchPAM {
+     const DEFAULT_UNLOCK_THRESHOLD: i16 = -80;
++    const DEFAULT_SEARCH_TIMEOUT_MS: u64 = 1500;
+ 
+     async fn unlock_with_apple_watch(
+         args: HashMap<&str, &str>,
+@@ -103,11 +104,19 @@ impl AppleWatchPAM {
+             .and_then(|value| value.parse().ok())
+             .unwrap_or(Self::DEFAULT_UNLOCK_THRESHOLD);
+ 
++        // A single continuous discovery session finds the watch far more
++        // reliably than several short ones, as each restart of discovery
++        // eats into the time available to receive an advertisement.
++        let search_timeout_ms: u64 = args
++            .get("search_timeout_ms")
++            .and_then(|value| value.parse().ok())
++            .unwrap_or(Self::DEFAULT_SEARCH_TIMEOUT_MS);
++
+         conv.info(c"Searching for Apple Watch");
+         let mut watch = AppleWatch::new(irk);
+ 
+         match watch
+-            .find_watch(&adapter, 3, Duration::from_millis(500))
++            .find_watch(&adapter, 1, Duration::from_millis(search_timeout_ms))
+             .await
+         {
+             Err(err) => {
