@@ -78,41 +78,41 @@ impl AppleWatch {
         &self,
         adapter: &Adapter,
     ) -> Result<Option<Device>, AppleWatchError> {
+        // BlueZ keeps recently seen devices cached, without an RSSI, after
+        // discovery stops. Listening for property changes as well as new
+        // devices means a cached watch is reported again once a fresh
+        // advertisement populates its RSSI.
         let mut device_events = AppleWatchError::wrap_bluetooth_action("discover devices", || {
-            adapter.discover_devices()
+            adapter.discover_devices_with_changes()
         })
         .await?;
 
-        loop {
-            tokio::select! {
-                Some(device_event) = device_events.next() => {
-                    match device_event {
-                        AdapterEvent::DeviceAdded(addr) if self.is_matching_watch_address(addr) => {
-                            // Before returning a successful discovery, first make
-                            // sure an RSSI value is available otherwise it won't
-                            // be possible to use it for unlocking a user session.
-                            let device = match adapter.device(addr) {
-                                Err(err) => return Err(BluetoothError {
-                                    action: "get Apple Watch device",
-                                    source: err
-                                }),
-                                Ok(device) => device
-                            };
+        while let Some(device_event) = device_events.next().await {
+            let AdapterEvent::DeviceAdded(addr) = device_event else {
+                continue;
+            };
 
-                            let rssi = AppleWatchError::wrap_bluetooth_action("get device RSSI", || {
-                                device.rssi()
-                            }).await?;
+            if !self.is_matching_watch_address(addr) {
+                continue;
+            }
 
-                            return match rssi {
-                                Some(_) => Ok(Some(device)),
-                                None => Ok(None)
-                            }
-                        }
-                        _ => ()
-                    }
-                }
+            let device = adapter.device(addr).map_err(|err| BluetoothError {
+                action: "get Apple Watch device",
+                source: err,
+            })?;
+
+            // Before returning a successful discovery, first make
+            // sure an RSSI value is available otherwise it won't
+            // be possible to use it for unlocking a user session.
+            let rssi =
+                AppleWatchError::wrap_bluetooth_action("get device RSSI", || device.rssi()).await?;
+
+            if rssi.is_some() {
+                return Ok(Some(device));
             }
         }
+
+        Ok(None)
     }
 
     /// Determines if the supplied Bluetooth address matches
