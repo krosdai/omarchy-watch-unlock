@@ -41,11 +41,10 @@ manual lock.
 
 ## Install
 
-Review this repository, then add and enable the plugin. Until it is published, add it
-from a local clone; `omarchy plugin add` clones the committed `HEAD`:
+Review this repository, then add and enable the plugin:
 
 ```sh
-omarchy plugin add file://$HOME/repos/krosdai.omarchy-watch-unlock --enable
+omarchy plugin add https://github.com/krosdai/omarchy-watch-unlock.git --enable
 ```
 
 On first enable, the plugin opens a terminal with a disclosure and a `[y/N]` prompt.
